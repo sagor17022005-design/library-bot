@@ -3,60 +3,125 @@ import os
 import asyncio
 from telethon import TelegramClient, events
 
-# লগিং
 logging.basicConfig(level=logging.INFO)
 
-API_ID = int(os.getenv("API_ID").strip())
-API_HASH = os.getenv("API_HASH").strip()
-BOT_TOKEN = os.getenv("TOKEN").strip()
-CHANNEL_ID = -1001003525284401 
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("TOKEN")
+
+CHANNEL_ID = -1003525284401
 CHANNEL_USERNAME = "shibir_online_library"
 
-# সেশন ফাইলের নাম 'bot_session' থেকে বদলে 'library_bot' দিচ্ছি যাতে ফ্রেশ স্টার্ট হয়
-client = TelegramClient('library_bot', API_ID, API_HASH)
+client = TelegramClient("library_bot", API_ID, API_HASH)
 
-@client.on(events.NewMessage(pattern='/start'))
+books = []
+
+# -------- Channel Index --------
+async def index_channel():
+    print("📚 Channel indexing শুরু...")
+
+    async for message in client.iter_messages(CHANNEL_ID):
+
+        text = (message.text or "").lower()
+        file_name = ""
+
+        if message.file and message.file.name:
+            file_name = message.file.name.lower()
+
+        name = text if text else file_name
+
+        if name:
+            books.append({
+                "name": name,
+                "id": message.id
+            })
+
+    print(f"✅ Index complete : {len(books)} books")
+
+
+# -------- Auto index new post --------
+@client.on(events.NewMessage(chats=CHANNEL_ID))
+async def new_book(event):
+
+    msg = event.message
+    text = (msg.text or "").lower()
+    file_name = ""
+
+    if msg.file and msg.file.name:
+        file_name = msg.file.name.lower()
+
+    name = text if text else file_name
+
+    if name:
+        books.append({
+            "name": name,
+            "id": msg.id
+        })
+
+        print("📥 New book added")
+
+
+# -------- Start command --------
+@client.on(events.NewMessage(pattern="/start"))
 async def start(event):
-    await event.reply("আসসালামু আলাইকুম! বইয়ের নাম লিখে মেসেজ দিন, আমি ডাউনলোড লিঙ্ক খুঁজে দেব।")
 
-@client.on(events.NewMessage)
-async def search_and_link(event):
-    if not event.is_private or event.text.startswith('/'):
+    if not event.is_private:
         return
 
-    query = event.text.strip().lower()
-    search_msg = await event.reply(f"🔍 '{query}' খুঁজছি...")
-    
-    results = []
-    try:
-        # শেষ ২০০০ মেসেজ স্ক্যান
-        async for message in client.iter_messages(CHANNEL_ID, limit=2000):
-            text = (message.text or "").lower()
-            file_name = ""
-            if message.file and message.file.name:
-                file_name = message.file.name.lower()
-            
-            if query in text or query in file_name:
-                msg_link = f"https://t.me/{CHANNEL_USERNAME}/{message.id}"
-                snippet = text[:40].replace('\n', ' ') if text else "বইয়ের ফাইল"
-                results.append(f"📖 **{snippet}...**\n🔗 [ডাউনলোড লিঙ্ক]({msg_link})")
-                if len(results) >= 5: break 
+    await event.reply(
+        "আসসালামু আলাইকুম\n\n"
+        "📚 বই খুঁজতে বইয়ের নাম লিখুন"
+    )
 
-    except Exception as e:
-        logging.error(f"Error: {e}")
+
+# -------- Search --------
+@client.on(events.NewMessage)
+async def search(event):
+
+    if not event.is_private:
+        return
+
+    if not event.text:
+        return
+
+    if event.text.startswith("/"):
+        return
+
+    query = event.text.lower()
+
+    results = []
+
+    for book in books:
+
+        if query in book["name"]:
+            results.append(book)
+
+        if len(results) >= 5:
+            break
 
     if not results:
-        await event.reply(f"❌ '{query}' নামে কিছু পাওয়া যায়নি।")
-    else:
-        response = "✅ **আপনার জন্য নিচের লিঙ্কগুলো পাওয়া গেছে:**\n\n" + "\n\n".join(results)
-        await event.reply(response, link_preview=False)
-    
-    await search_msg.delete()
+        await event.reply("❌ এই নামে কোনো বই পাওয়া যায়নি")
+        return
 
+    text = "📚 পাওয়া গেছে:\n\n"
+
+    for r in results:
+        link = f"https://t.me/{CHANNEL_USERNAME}/{r['id']}"
+        text += f"🔗 {link}\n\n"
+
+    await event.reply(text, link_preview=False)
+
+
+# -------- Main --------
 async def main():
+
     await client.start(bot_token=BOT_TOKEN)
-    print("Bot is alive and sending links!")
+
+    await index_channel()
+
+    print("🤖 Bot Running...")
+
     await client.run_until_disconnected()
 
-if __name__ == '__main__':
-    asyncio.run(main())
+
+asyncio.run(main())
