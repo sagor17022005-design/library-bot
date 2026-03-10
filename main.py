@@ -1,4 +1,5 @@
 import logging
+import os  # এটি টোকেন পড়ার জন্য দরকার
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -8,13 +9,13 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# আপনার তথ্য
-TOKEN = "8762483955:AAEJdl9y5JR3cdB4CQJBlep8SPC9MmL7EUg"
+# রেলওয়ে ভেরিয়েবল থেকে টোকেন নেওয়া
+TOKEN = os.getenv("TOKEN")
 CHANNEL_USERNAME = "shibir_online_library"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "আসসালামু আলাইকুম! বইয়ের নাম লিখে মেসেজ দিন, আমি সেটি আমাদের লাইব্রেরিতে খুঁজে দেব।"
+        "আসসালামু আলাইকুম! বইয়ের নাম লিখে সার্চ দিন, আমি লাইব্রেরি থেকে সেটি খুঁজে দেব।"
     )
 
 async def search_books(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -35,6 +36,10 @@ async def search_books(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response, parse_mode='Markdown')
 
 def main():
+    if not TOKEN:
+        print("Error: TOKEN variable not found in Railway settings!")
+        return
+
     # বট স্টার্ট
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
@@ -45,4 +50,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-  
