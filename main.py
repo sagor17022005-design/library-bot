@@ -1,13 +1,13 @@
 import logging
 import os
 import asyncio
-from telethon import TelegramClient, events, functions, types
+from telethon import TelegramClient, events
 
-# লগিং
+# লগিং সেটআপ
 logging.basicConfig(level=logging.INFO)
 
 API_ID = int(os.getenv("API_ID").strip())
-API_HASH = os.getenv("API_HASH").strip()
+API_HASH = os.getenv("API_HASH").strip())
 BOT_TOKEN = os.getenv("TOKEN").strip()
 CHANNEL_USERNAME = "shibir_online_library" 
 
@@ -15,59 +15,62 @@ client = TelegramClient('bot_session', API_ID, API_HASH)
 
 @client.on(events.NewMessage(pattern='/start'))
 async def start(event):
-    await event.reply("আসসালামু আলাইকুম! বইয়ের নাম লিখে মেসেজ দিন।")
+    await event.reply("আসসালামু আলাইকুম! বইয়ের নাম লিখে মেসেজ দিন, আমি সরাসরি পিডিএফ ফাইলটি পাঠিয়ে দেব ইনশাআল্লাহ।")
 
 @client.on(events.NewMessage)
-async def search_books(event):
+async def search_and_send_pdf(event):
     if event.is_private and not event.text.startswith('/'):
         query = event.text.strip()
         if len(query) < 2:
-            await event.reply("অনুগ্রহ করে একটু বিস্তারিত লিখুন।")
+            await event.reply("অনুগ্রহ করে বইয়ের নাম একটু বিস্তারিত লিখুন।")
             return
 
-        search_msg = await event.reply(f"🔍 '{query}' বইটি খুঁজছি...")
+        search_msg = await event.reply(f"🔍 '{query}' বইটি আমাদের লাইব্রেরিতে খুঁজছি...")
         
         found = False
         try:
-            # চ্যানেল এনটিটি গেট করা
             entity = await client.get_entity(CHANNEL_USERNAME)
             
-            # সার্চ করার আধুনিক পদ্ধতি (চ্যানেলের সব মেসেজ চেক করবে)
-            async for message in client.iter_messages(entity, search=query):
-                # নিশ্চিত করা হচ্ছে যে মেসেজে টেক্সট আছে এবং তা সার্চের সাথে মিলছে
+            # চ্যানেলে সার্চ করা
+            async for message in client.iter_messages(entity, search=query, limit=15):
+                # যদি মেসেজে টেক্সট থাকে এবং তাতে কুয়েরিটি থাকে
                 if message.text and query.lower() in message.text.lower():
                     found = True
-                    msg_link = f"https://t.me/{CHANNEL_USERNAME}/{message.id}"
                     
-                    response = (
-                        f"✅ **বই খুঁজে পাওয়া গেছে!**\n\n"
-                        f"📖 **পোস্টের কিছু অংশ:**\n`{message.text[:150]}...` \n\n"
-                        f"🔗 [সরাসরি বইয়ের পোস্টে যেতে এখানে ক্লিক করুন]({msg_link})"
-                    )
-                    await event.reply(response, link_preview=True)
+                    # যদি মেসেজে কোনো ফাইল/মিডিয়া থাকে
+                    if message.media:
+                        await event.reply(f"✅ বই পাওয়া গেছে! সরাসরি ফাইলটি পাঠানো হচ্ছে...")
+                        # সরাসরি ফাইলটি ফরওয়ার্ড বা সেন্ড করা
+                        await client.send_file(event.chat_id, message.media, caption=f"📚 **{query}**\n\nVia: @shibir_online_library")
+                    else:
+                        # যদি শুধু টেক্সট থাকে তবে লিঙ্ক দেবে
+                        msg_link = f"https://t.me/{CHANNEL_USERNAME}/{message.id}"
+                        await event.reply(f"✅ বইয়ের পোস্ট পাওয়া গেছে, কিন্তু কোনো ফাইল নেই।\n🔗 [পোস্ট লিঙ্ক]({msg_link})")
                     break 
+
+            # যদি সাধারণ সার্চে না পাওয়া যায় (Deep Search)
+            if not found:
+                async for message in client.iter_messages(entity, limit=300):
+                    if message.text and query.lower() in message.text.lower():
+                        found = True
+                        if message.media:
+                            await client.send_file(event.chat_id, message.media, caption=f"📚 **{query}** (Deep Search)")
+                        else:
+                            msg_link = f"https://t.me/{CHANNEL_USERNAME}/{message.id}"
+                            await event.reply(f"✅ লিঙ্ক পাওয়া গেছে: {msg_link}")
+                        break
 
         except Exception as e:
             logging.error(f"Error: {e}")
 
         if not found:
-            # যদি সরাসরি সার্চে না পাওয়া যায়, তবে ম্যানুয়ালি মেসেজ স্ক্যান করার চেষ্টা (Deep Search)
-            await search_msg.edit("🔍 গভীর অনুসন্ধান (Deep Search) করছি...")
-            async for message in client.iter_messages(entity, limit=200):
-                if message.text and query.lower() in message.text.lower():
-                    found = True
-                    msg_link = f"https://t.me/{CHANNEL_USERNAME}/{message.id}"
-                    await event.reply(f"✅ **বই পাওয়া গেছে (Deep Search):**\n\n🔗 {msg_link}", link_preview=True)
-                    break
-
-        if not found:
-            await event.reply(f"❌ দুঃখিত, '{query}' নামে কোনো বই চ্যানেলে পাওয়া যায়নি। বানানে কোনো ভুল আছে কি না চেক করুন।")
+            await event.reply(f"❌ দুঃখিত, '{query}' নামে কোনো বই বা ফাইল পাওয়া যায়নি।")
         
         await search_msg.delete()
 
 async def main():
     await client.start(bot_token=BOT_TOKEN)
-    print("Bot is fully active now!")
+    print("Bot is sending PDFs now!")
     await client.run_until_disconnected()
 
 if __name__ == '__main__':
