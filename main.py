@@ -1,18 +1,20 @@
 import logging
 import os
+import asyncio
 from telethon import TelegramClient, events
 
 # লগিং সেটআপ
 logging.basicConfig(level=logging.INFO)
 
 # রেলওয়ে Variables থেকে তথ্য নেওয়া
-API_ID = int(os.getenv("API_ID")) 
-API_HASH = os.getenv("API_HASH")
-BOT_TOKEN = os.getenv("TOKEN")
+# এখানে int() ব্যবহার করা হয়েছে যাতে বড় সংখ্যা হলেও সমস্যা না হয়
+API_ID = int(os.getenv("API_ID").strip()) 
+API_HASH = os.getenv("API_HASH").strip()
+BOT_TOKEN = os.getenv("TOKEN").strip()
 CHANNEL_USERNAME = "shibir_online_library"
 
 # ক্লায়েন্ট সেটআপ
-client = TelegramClient('bot_session', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+client = TelegramClient('bot_session', API_ID, API_HASH)
 
 @client.on(events.NewMessage(pattern='/start'))
 async def start(event):
@@ -20,7 +22,6 @@ async def start(event):
 
 @client.on(events.NewMessage)
 async def search_books(event):
-    # কমান্ড বা নিজের মেসেজ হলে ইগনোর করবে
     if event.text.startswith('/') or event.is_group: return
     
     query = event.text
@@ -28,17 +29,12 @@ async def search_books(event):
         await event.reply("অনুগ্রহ করে বইয়ের নাম একটু বিস্তারিত লিখুন।")
         return
 
-    # সার্চিং নোটিফিকেশন
     search_msg = await event.reply("🔍 আমাদের লাইব্রেরিতে বইটি খুঁজছি...")
     
     found = False
-    # চ্যানেলের মেসেজ সার্চ করা
     async for message in client.iter_messages(CHANNEL_USERNAME, search=query, limit=5):
         found = True
-        # সরাসরি মেসেজের লিঙ্ক তৈরি (যেমন: t.me/channel/123)
         msg_link = f"https://t.me/{CHANNEL_USERNAME}/{message.id}"
-        
-        # মেসেজের প্রথম কিছু অংশ দেখানো যাতে ইউজার বুঝতে পারে
         snippet = message.text[:150] if message.text else "বইটির পোস্ট দেখতে নিচের লিঙ্কে ক্লিক করুন।"
         
         response = (
@@ -47,12 +43,17 @@ async def search_books(event):
             f"🔗 [সরাসরি এখানে ক্লিক করুন]({msg_link})"
         )
         await event.reply(response, link_preview=True)
-        break # প্রথম ভালো রেজাল্ট পেলেই থেমে যাবে
+        break
 
     if not found:
         await event.reply("❌ দুঃখিত, এই নামে কোনো বই আমাদের চ্যানেলে পাওয়া যায়নি।")
     
     await search_msg.delete()
 
-print("বটটি এখন সক্রিয়...")
-client.run_until_disconnected()
+async def main():
+    await client.start(bot_token=BOT_TOKEN)
+    print("বটটি এখন সক্রিয়...")
+    await client.run_until_disconnected()
+
+if __name__ == '__main__':
+    asyncio.run(main())
