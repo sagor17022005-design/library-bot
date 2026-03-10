@@ -10,19 +10,18 @@ API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("TOKEN")
 
 CHANNEL_ID = -1003525284401
-CHANNEL_USERNAME = "shibir_online_library"
 
 client = TelegramClient("library_bot", API_ID, API_HASH)
 
 books = []
 
-# -------- Index Channel --------
+
+# -------- Index Old Books --------
 async def index_channel():
-    print("📚 Channel indexing started")
 
-    count = 0
+    print("📚 Indexing old books...")
 
-    async for message in client.iter_messages(CHANNEL_ID, limit=3000):
+    async for message in client.iter_messages(CHANNEL_ID, limit=500):
 
         text = (message.text or "").lower()
         file_name = ""
@@ -38,19 +37,15 @@ async def index_channel():
                 "id": message.id
             })
 
-        count += 1
-
-        if count % 200 == 0:
-            print(f"Indexed {count} messages")
-
-    print(f"✅ Index complete : {len(books)} books")
+    print(f"✅ Indexed {len(books)} books")
 
 
-# -------- Auto index new post --------
+# -------- Auto Index New Book --------
 @client.on(events.NewMessage(chats=CHANNEL_ID))
-async def new_book(event):
+async def auto_index(event):
 
     msg = event.message
+
     text = (msg.text or "").lower()
     file_name = ""
 
@@ -60,6 +55,7 @@ async def new_book(event):
     name = text if text else file_name
 
     if name:
+
         books.append({
             "name": name,
             "id": msg.id
@@ -81,7 +77,7 @@ async def start(event):
     )
 
 
-# -------- Search --------
+# -------- Search Book --------
 @client.on(events.NewMessage)
 async def search(event):
 
@@ -96,49 +92,19 @@ async def search(event):
 
     query = event.text.lower()
 
-    results = []
-
     for book in books:
 
         if query in book["name"]:
-            results.append(book)
 
-        if len(results) >= 5:
-            break
+            await client.forward_messages(
+                event.chat_id,
+                book["id"],
+                CHANNEL_ID
+            )
 
-    if not results:
-        await event.reply("❌ এই নামে কোনো বই পাওয়া যায়নি")
-        return
+            return
 
-    text = "📚 পাওয়া গেছে:\n\n"
-
-    for r in results:
-
-        link = f"https://t.me/{CHANNEL_USERNAME}/{r['id']}"
-
-        text += f"📖 {r['name'][:40]}...\n🔗 {link}\n\n"
-
-    await event.reply(text, link_preview=False)
-
-
-# -------- Send PDF --------
-@client.on(events.NewMessage(pattern="/pdf"))
-async def send_pdf(event):
-
-    if not event.is_private:
-        return
-
-    try:
-        msg_id = int(event.text.split(" ")[1])
-
-        await client.forward_messages(
-            event.chat_id,
-            msg_id,
-            CHANNEL_ID
-        )
-
-    except:
-        await event.reply("ব্যবহার: /pdf message_id")
+    await event.reply("❌ এই নামে কোনো বই পাওয়া যায়নি")
 
 
 # -------- Main --------
@@ -146,9 +112,9 @@ async def main():
 
     await client.start(bot_token=BOT_TOKEN)
 
-    print("🤖 Bot started")
+    print("🤖 Bot Running...")
 
-    # indexing background এ চলবে
+    # background indexing
     asyncio.create_task(index_channel())
 
     await client.run_until_disconnected()
