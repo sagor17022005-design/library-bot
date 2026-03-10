@@ -9,13 +9,15 @@ logging.basicConfig(level=logging.INFO)
 API_ID = int(os.getenv("API_ID").strip())
 API_HASH = os.getenv("API_HASH").strip()
 BOT_TOKEN = os.getenv("TOKEN").strip()
-CHANNEL_USERNAME = "shibir_online_library" 
+
+# আপনার দেওয়া আইডিটি এখানে বসানো হয়েছে
+CHANNEL_ID = -1001003525284401 
 
 client = TelegramClient('bot_session', API_ID, API_HASH)
 
 @client.on(events.NewMessage(pattern='/start'))
 async def start(event):
-    await event.reply("আসসালামু আলাইকুম! বইয়ের নাম লিখে মেসেজ দিন, আমি ফাইলটি পাঠিয়ে দিচ্ছি ইনশাআল্লাহ।")
+    await event.reply("আসসালামু আলাইকুম! বইয়ের নাম লিখুন, আমি সরাসরি ফাইলটি দিচ্ছি।")
 
 @client.on(events.NewMessage)
 async def search_and_send(event):
@@ -25,38 +27,32 @@ async def search_and_send(event):
     query = event.text.strip().lower()
     search_msg = await event.reply("🔍 লাইব্রেরি স্ক্যান করছি... একটু সময় দিন।")
     
-    found_count = 0
-    scanned_count = 0
+    found = False
+    scanned = 0
     
     try:
-        # চ্যানেল থেকে সরাসরি মেসেজ চেক করা
-        entity = await client.get_entity(CHANNEL_USERNAME)
-        
-        async for message in client.iter_messages(entity, limit=1000):
-            scanned_count += 1
-            # মেসেজে টেক্সট বা ক্যাপশন থাকলে তা চেক করবে
+        # সরাসরি আইডি দিয়ে মেসেজ চেক করা (সবচেয়ে নির্ভুল পদ্ধতি)
+        async for message in client.iter_messages(CHANNEL_ID, limit=1000):
+            scanned += 1
             msg_text = (message.text or "").lower()
             
             if query in msg_text:
-                found_count += 1
+                found = True
+                # ফাইল সরাসরি ফরওয়ার্ড করা
                 await client.forward_messages(event.chat_id, message)
-                # প্রথম ৩টি রেজাল্ট পেলে থেমে যাবে (বেশি জ্যাম এড়াতে)
-                if found_count >= 3:
-                    break 
+                break 
 
     except Exception as e:
-        await event.reply(f"⚠️ এরর: {str(e)}")
+        await event.reply(f"⚠️ এরর: {str(e)}\n\nনিশ্চিত করুন বটটি চ্যানেলে অ্যাডমিন আছে।")
 
-    if found_count == 0:
-        await event.reply(f"❌ দুঃখিত, '{query}' শব্দটি আমাদের শেষ ১০০০টি মেসেজে খুঁজে পাওয়া যায়নি।\n(বটটি মোট {scanned_count}টি মেসেজ স্ক্যান করেছে)")
-    else:
-        await event.reply(f"✅ মোট {found_count}টি রেজাল্ট পাঠানো হয়েছে।")
+    if not found:
+        await event.reply(f"❌ পাওয়া যায়নি। বটটি {scanned}টি মেসেজ চেক করেছে।")
     
     await search_msg.delete()
 
 async def main():
     await client.start(bot_token=BOT_TOKEN)
-    print("বটটি এখন লাইভ এবং স্ক্যানিং মুডে আছে!")
+    print("Bot is Online and Ready!")
     await client.run_until_disconnected()
 
 if __name__ == '__main__':
