@@ -16,11 +16,13 @@ client = TelegramClient("library_bot", API_ID, API_HASH)
 
 books = []
 
-# -------- Channel Index --------
+# -------- Index Channel --------
 async def index_channel():
-    print("📚 Channel indexing শুরু...")
+    print("📚 Channel indexing started")
 
-    async for message in client.iter_messages(CHANNEL_ID):
+    count = 0
+
+    async for message in client.iter_messages(CHANNEL_ID, limit=3000):
 
         text = (message.text or "").lower()
         file_name = ""
@@ -35,6 +37,11 @@ async def index_channel():
                 "name": name,
                 "id": message.id
             })
+
+        count += 1
+
+        if count % 200 == 0:
+            print(f"Indexed {count} messages")
 
     print(f"✅ Index complete : {len(books)} books")
 
@@ -58,10 +65,10 @@ async def new_book(event):
             "id": msg.id
         })
 
-        print("📥 New book added")
+        print("📥 New book indexed")
 
 
-# -------- Start command --------
+# -------- Start --------
 @client.on(events.NewMessage(pattern="/start"))
 async def start(event):
 
@@ -106,10 +113,32 @@ async def search(event):
     text = "📚 পাওয়া গেছে:\n\n"
 
     for r in results:
+
         link = f"https://t.me/{CHANNEL_USERNAME}/{r['id']}"
-        text += f"🔗 {link}\n\n"
+
+        text += f"📖 {r['name'][:40]}...\n🔗 {link}\n\n"
 
     await event.reply(text, link_preview=False)
+
+
+# -------- Send PDF --------
+@client.on(events.NewMessage(pattern="/pdf"))
+async def send_pdf(event):
+
+    if not event.is_private:
+        return
+
+    try:
+        msg_id = int(event.text.split(" ")[1])
+
+        await client.forward_messages(
+            event.chat_id,
+            msg_id,
+            CHANNEL_ID
+        )
+
+    except:
+        await event.reply("ব্যবহার: /pdf message_id")
 
 
 # -------- Main --------
@@ -117,9 +146,10 @@ async def main():
 
     await client.start(bot_token=BOT_TOKEN)
 
-    await index_channel()
+    print("🤖 Bot started")
 
-    print("🤖 Bot Running...")
+    # indexing background এ চলবে
+    asyncio.create_task(index_channel())
 
     await client.run_until_disconnected()
 
