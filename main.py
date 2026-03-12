@@ -1,123 +1,78 @@
 import logging
 import os
 import asyncio
+import firebase_admin
+from firebase_admin import credentials, db
 from telethon import TelegramClient, events
 
+# লগিং সেটআপ
 logging.basicConfig(level=logging.INFO)
 
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-BOT_TOKEN = os.getenv("TOKEN")
+# এনভায়রনমেন্ট ভেরিয়েবল থেকে তথ্য সংগ্রহ (রেলওয়েতে সেট করা থাকতে হবে)
+API_ID = int(os.getenv("API_ID").strip())
+API_HASH = os.getenv("API_HASH").strip()
+BOT_TOKEN = os.getenv("TOKEN").strip()
 
-CHANNEL_ID = -1003525284401
+# ১. ফায়ারবেস সেটআপ
+# নিশ্চিত করুন আপনার .json ফাইলটির নাম 'firebase-key.json' এবং এটি main.py এর সাথেই আছে
+cred = credentials.Certificate("firebase-key.json")
+firebase_admin.initialize_app(cred, {
+    'databaseURL': 'https://librarybot-f2e86-default-rtdb.firebaseio.com/'
+})
 
-client = TelegramClient("library_bot", API_ID, API_HASH)
+# ২. টেলিগ্রাম ক্লায়েন্ট সেটআপ
+client = TelegramClient('library_bot_session', API_ID, API_HASH)
 
-books = []
-
-
-# -------- Index Old Books --------
-async def index_channel():
-
-    print("📚 Indexing old books...")
-
-    async for message in client.iter_messages(CHANNEL_ID, limit=500):
-
-        text = (message.text or "").lower()
-        file_name = ""
-
-        if message.file and message.file.name:
-            file_name = message.file.name.lower()
-
-        name = text if text else file_name
-
-        if name:
-            books.append({
-                "name": name,
-                "id": message.id
-            })
-
-    print(f"✅ Indexed {len(books)} books")
-
-
-# -------- Auto Index New Book --------
-@client.on(events.NewMessage(chats=CHANNEL_ID))
-async def auto_index(event):
-
-    msg = event.message
-
-    text = (msg.text or "").lower()
-    file_name = ""
-
-    if msg.file and msg.file.name:
-        file_name = msg.file.name.lower()
-
-    name = text if text else file_name
-
-    if name:
-
-        books.append({
-            "name": name,
-            "id": msg.id
-        })
-
-        print("📥 New book indexed")
-
-
-# -------- Start --------
-@client.on(events.NewMessage(pattern="/start"))
+@client.on(events.NewMessage(pattern='/start'))
 async def start(event):
+    await event.reply("আসসালামু আলাইকুম! বইয়ের নাম লিখে মেসেজ দিন, আমি সরাসরি ডাউনলোড লিঙ্ক খুঁজে দেব।")
 
-    if not event.is_private:
-        return
-
-    await event.reply(
-        "আসসালামু আলাইকুম\n\n"
-        "📚 বই খুঁজতে বইয়ের নাম লিখুন"
-    )
-
-
-# -------- Search Book --------
 @client.on(events.NewMessage)
-async def search(event):
-
-    if not event.is_private:
+async def search_firebase(event):
+    # শুধু প্রাইভেট চ্যাটে কাজ করবে এবং কমান্ডগুলো এড়িয়ে চলবে
+    if not event.is_private or event.text.startswith('/'):
         return
 
-    if not event.text:
-        return
+    query = event.text.strip().lower()
+    search_msg = await event.reply(f"🔍 '{query}' শব্দটি ডেটাবেসে খুঁজছি...")
+    
+    results = []
+    try:
+        # ফায়ারবেসের 'books' রেফারেন্স থেকে ডেটা আনা
+        ref = db.reference('books')
+        all_books = ref.get()
 
-    if event.text.startswith("/"):
-        return
+        if all_books:
+            # যদি ডেটাবেস লিস্ট আকারে থাকে (০, ১, ২...)
+            if isinstance(all_books, list):
+                for book in all_books:
+                    if book and query in book.get('name', '').lower():
+                        results.append(f"📖 **{book['name']}**\n🔗 [ডাউনলোড লিঙ্ক]({book['link']})")
+            
+            # যদি ডেটাবেস ডিকশনারি আকারে থাকে (key: value)
+            elif isinstance(all_books, dict):
+                for key, book in all_books.items():
+                    if query in book.get('name', '').lower():
+                        results.append(f"📖 **{book['name']}**\n🔗 [ডাউনলোড লিঙ্ক]({book['link']})")
 
-    query = event.text.lower()
+    except Exception as e:
+        logging.error(f"Firebase Error: {e}")
+        await event.reply("⚠️ ডেটাবেস থেকে তথ্য সংগ্রহে সমস্যা হচ্ছে।")
 
-    for book in books:
+    if not results:
+        await event.reply(f"❌ দুঃখিত, '{query}' নামে কোনো বই ডেটাবেসে পাওয়া যায়নি।")
+    else:
+        # সব লিঙ্ক একসাথে সুন্দর করে সাজিয়ে পাঠানো
+        response_text = "✅ **আপনার জন্য নিচের লিঙ্কগুলো পাওয়া গেছে:**\n\n" + "\n\n".join(results)
+        await event.reply(response_text, link_preview=False)
+    
+    # "খুঁজছি..." মেসেজটি ডিলিট করে দেওয়া
+    await search_msg.delete()
 
-        if query in book["name"]:
-
-            await client.forward_messages(
-                event.chat_id,
-                book["id"],
-                CHANNEL_ID
-            )
-
-            return
-
-    await event.reply("❌ এই নামে কোনো বই পাওয়া যায়নি")
-
-
-# -------- Main --------
 async def main():
-
     await client.start(bot_token=BOT_TOKEN)
-
-    print("🤖 Bot Running...")
-
-    # background indexing
-    asyncio.create_task(index_channel())
-
+    print("Bot is successfully running with Firebase!")
     await client.run_until_disconnected()
 
-
-asyncio.run(main())
+if __name__ == '__main__':
+    asyncio.run(main())
